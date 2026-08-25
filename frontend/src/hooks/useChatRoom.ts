@@ -84,7 +84,15 @@ export function useChatRoom({
   const typingDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
 
-  const wsUrl = `/api/rooms/${roomCode}/ws`;
+  const storedPid = typeof window !== 'undefined' ? sessionStorage.getItem(`doomchat_${roomCode}_pid`) : null;
+  const storedToken = typeof window !== 'undefined' ? sessionStorage.getItem(`doomchat_${roomCode}_token`) : null;
+
+  const queryParams = new URLSearchParams();
+  if (storedPid) queryParams.set('pid', storedPid);
+  if (storedToken) queryParams.set('token', storedToken);
+  queryParams.set('nickname', nickname);
+
+  const wsUrl = `/api/rooms/${roomCode}/ws?${queryParams.toString()}`;
 
   const addSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [...prev, makeSystemMsg(text)]);
@@ -332,13 +340,25 @@ export function useChatRoom({
   // ── Leave / disband ────────────────────────────────────────────────────────
 
   const leaveRoom = useCallback(() => {
+    try {
+      sessionStorage.removeItem(`doomchat_${roomCode}_pid`);
+      sessionStorage.removeItem(`doomchat_${roomCode}_token`);
+    } catch {
+      // ignore
+    }
     send({ type: 'leave' });
     disconnect();
-  }, [send, disconnect]);
+  }, [send, disconnect, roomCode]);
 
   const disbandRoom = useCallback(() => {
+    try {
+      sessionStorage.removeItem(`doomchat_${roomCode}_pid`);
+      sessionStorage.removeItem(`doomchat_${roomCode}_token`);
+    } catch {
+      // ignore
+    }
     send({ type: 'disband' });
-  }, [send]);
+  }, [send, roomCode]);
 
   // Cleanup typing on unmount
   useEffect(() => {

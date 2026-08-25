@@ -59,6 +59,8 @@ const TYPING_CLEAR_TIMEOUT_MS = 5000;
 export class ChatRoom extends DurableObject {
   // in-memory participant map: participantId → state
   private participants: Map<string, ParticipantState> = new Map();
+  // recent participant cache for idempotent reconnects within 60s
+  private recentParticipants: Map<string, { nickname: string; joinedAt: number; expiry: number }> = new Map();
   // persisted state loaded lazily
   private persisted: PersistedState | null = null;
   // initialization flag
@@ -194,8 +196,17 @@ export class ChatRoom extends DurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
-    // Attach metadata to the WebSocket for use in hibernation handlers
-    const participantId = generateParticipantId();
+    // Read query params for stable participant identity
+    const pidParam = url.searchParams.get('pid');
+    const tokenParam = url.searchParams.get('token');
+    const isCreator =
+      (tokenParam && tokenParam === this.persisted!.creatorToken) ||
+      (pidParam && pidParam === this.persisted!.creatorId);
+
+    const participantId = isCreator
+      ? (this.persisted!.creatorId || pidParam || generateParticipantId())
+      : (pidParam || generateParticipantId());
+
     this.ctx.acceptWebSocket(server, [participantId]);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -235,10 +246,44 @@ export class ChatRoom extends DurableObject {
     await this.ensureInitialized();
     const tags = this.ctx.getTags(ws);
     const participantId = tags[0];
-    const att = ws.deserializeAttachment() as { id: string } | null;
+    const att = ws.deserializeAttachment() as { id: string; nickname: string } | null;
     const effectiveId = att?.id || participantId;
-    if (effectiveId) {
-      await this.handleParticipantLeave(effectiveId, true);
+
+    if (!effectiveId) return;
+
+    // Check if this participant has any other active sockets
+    const userSockets = this.ctx.getWebSockets(effectiveId);
+    if (userSockets.length <= 1) {
+      const participant = this.participants.get(effectiveId);
+      const nickname = att?.nickname || participant?.nickname || 'A user';
+
+      this.recentParticipants.set(effectiveId, {
+        nickname,
+        joinedAt: participant?.joinedAt || Date.now(),
+        expiry: Date.now() + 60000,
+      });
+
+      this.participants.delete(effectiveId);
+
+      // If owner left, transfer ownership if other participants remain
+      if (this.persisted!.ownerId === effectiveId) {
+        await this.transferOwnership();
+      }
+
+      // Broadcast authoritative updated participant list
+      const remaining = this.getParticipantList();
+      if (remaining.length > 0) {
+        this.broadcast({
+          type: 'participant_left',
+          participantId: effectiveId,
+          nickname,
+          participants: remaining,
+          systemMessage: `${nickname} left the room`,
+        });
+        this.broadcastTyping();
+      } else {
+        await this.ctx.storage.setAlarm(Date.now() + EMPTY_ROOM_TIMEOUT_MS);
+      }
     }
   }
 
@@ -246,10 +291,27 @@ export class ChatRoom extends DurableObject {
     await this.ensureInitialized();
     const tags = this.ctx.getTags(ws);
     const participantId = tags[0];
-    const att = ws.deserializeAttachment() as { id: string } | null;
+    const att = ws.deserializeAttachment() as { id: string; nickname: string } | null;
     const effectiveId = att?.id || participantId;
-    if (effectiveId) {
-      await this.handleParticipantLeave(effectiveId, true);
+
+    if (!effectiveId) return;
+
+    const userSockets = this.ctx.getWebSockets(effectiveId);
+    if (userSockets.length <= 1) {
+      this.participants.delete(effectiveId);
+      if (this.persisted!.ownerId === effectiveId) {
+        await this.transferOwnership();
+      }
+      const remaining = this.getParticipantList();
+      if (remaining.length > 0) {
+        this.broadcast({
+          type: 'participant_left',
+          participantId: effectiveId,
+          nickname: att?.nickname || 'A user',
+          participants: remaining,
+          systemMessage: `${att?.nickname || 'A user'} left the room`,
+        });
+      }
     }
   }
 
@@ -304,7 +366,7 @@ export class ChatRoom extends DurableObject {
         this.handleTypingStop(effectiveId);
         break;
       case 'leave':
-        await this.handleParticipantLeave(effectiveId, false);
+        await this.handleParticipantLeave(effectiveId);
         ws.close(1000, 'User left');
         break;
       case 'disband':
@@ -357,18 +419,15 @@ export class ChatRoom extends DurableObject {
     const sanitizedNickname = sanitizeText((nickname as string).trim());
     const now = Date.now();
 
-    // Check if this is the Creator
+    // Authoritative check for Creator
     const isCreator =
       (token && token === this.persisted!.creatorToken) ||
-      (this.persisted!.creatorId && clientProvidedPid === this.persisted!.creatorId) ||
+      (this.persisted!.creatorId && (clientProvidedPid === this.persisted!.creatorId || participantId === this.persisted!.creatorId)) ||
       (this.persisted!.creatorNickname && sanitizedNickname === this.persisted!.creatorNickname);
 
-    // Resolve authoritative participant ID
     const effectiveId = isCreator
-      ? (this.persisted!.creatorId || participantId)
-      : (clientProvidedPid && this.participants.has(clientProvidedPid)
-          ? clientProvidedPid
-          : participantId);
+      ? (this.persisted!.creatorId || clientProvidedPid || participantId)
+      : (clientProvidedPid || participantId);
 
     if (isCreator) {
       this.persisted!.ownerId = effectiveId;
@@ -378,9 +437,15 @@ export class ChatRoom extends DurableObject {
       await this.saveState();
     }
 
-    // Check if this participant is already registered (e.g. reconnect)
+    // Check if this participant already existed in active map or recent cache
+    const recent = clientProvidedPid ? this.recentParticipants.get(clientProvidedPid) : null;
+    const isRecentReconnect = !!recent && recent.expiry > Date.now();
     const existing = this.participants.get(effectiveId);
-    const isReconnect = !!existing;
+    const isReconnect = !!existing || isRecentReconnect;
+
+    if (isRecentReconnect && clientProvidedPid) {
+      this.recentParticipants.delete(clientProvidedPid);
+    }
 
     if (!isReconnect && this.participants.size >= MAX_PARTICIPANTS) {
       this.sendTo(ws, {
@@ -393,7 +458,7 @@ export class ChatRoom extends DurableObject {
     }
 
     const isOwner = this.persisted!.ownerId === effectiveId;
-    const joinedAt = existing ? existing.joinedAt : now;
+    const joinedAt = existing ? existing.joinedAt : (recent ? recent.joinedAt : now);
 
     // Attach participant metadata to the WebSocket so it survives DO hibernation
     try {
@@ -403,7 +468,7 @@ export class ChatRoom extends DurableObject {
         joinedAt,
       });
     } catch {
-      // ignore if environment does not support serialization
+      // ignore
     }
 
     // Add/update in-memory map
@@ -454,13 +519,11 @@ export class ChatRoom extends DurableObject {
     text: unknown
   ): Promise<void> {
     const participant = this.participants.get(participantId);
-    if (!participant) {
-      this.sendTo(ws, { type: 'error', code: ErrorCodes.INVALID_NICKNAME, message: 'Not in room.' });
-      return;
-    }
+    const att = ws.deserializeAttachment() as { id: string; nickname: string } | null;
+    const senderNickname = att?.nickname || participant?.nickname || 'Participant';
 
     // Rate limiting
-    if (!participant.rateLimiter.consume()) {
+    if (participant && !participant.rateLimiter.consume()) {
       const retryMs = participant.rateLimiter.msUntilNextToken();
       this.sendTo(ws, {
         type: 'rate_limited',
@@ -486,13 +549,13 @@ export class ChatRoom extends DurableObject {
     // Auto-clear typing indicator when they send a message
     this.clearTyping(participantId);
 
-    // Broadcast to all
+    // Broadcast to ALL connected WebSockets in the room (including sender)
     this.broadcast({
       type: 'message',
       message: {
         id: generateMessageId(),
         senderId: participantId,
-        nickname: participant.nickname,
+        nickname: senderNickname,
         text: sanitized,
         timestamp: Date.now(),
       },
@@ -545,32 +608,17 @@ export class ChatRoom extends DurableObject {
 
   // ── leave ──────────────────────────────────────────────────────────────────
 
-  private async handleParticipantLeave(
-    participantId: string,
-    wasDisconnect: boolean
-  ): Promise<void> {
+  private async handleParticipantLeave(participantId: string): Promise<void> {
     const participant = this.participants.get(participantId);
-    if (!participant) return;
-
-    // Clear typing status
-    if (participant.typingTimeout) {
-      clearTimeout(participant.typingTimeout);
-      participant.typingTimeout = null;
-    }
-    participant.isTyping = false;
-
-    // If this is just a transient network/background disconnect, do not remove the participant
-    // immediately so they can reconnect without identity loss or ownership disruption.
-    if (wasDisconnect) {
-      return;
-    }
-
-    // Explicit user leave:
-    // Clear attachment on all sockets associated with this participant
     const sockets = this.ctx.getWebSockets();
+    let leavingNickname = participant?.nickname || 'A user';
+
+    // Clear attachment on all sockets associated with this participant
     for (const s of sockets) {
-      const att = s.deserializeAttachment() as { id: string } | null;
-      if (att?.id === participantId) {
+      const att = s.deserializeAttachment() as { id: string; nickname?: string } | null;
+      const tags = this.ctx.getTags(s);
+      if (att?.id === participantId || tags[0] === participantId) {
+        if (att?.nickname) leavingNickname = att.nickname;
         try {
           s.serializeAttachment(null);
         } catch {
@@ -579,27 +627,34 @@ export class ChatRoom extends DurableObject {
       }
     }
 
+    // Clear typing status
+    if (participant?.typingTimeout) {
+      clearTimeout(participant.typingTimeout);
+      participant.typingTimeout = null;
+    }
+
     this.participants.delete(participantId);
 
-    // If the owner left explicitly, transfer ownership first so owner flag in participant list is updated
+    // If the owner left explicitly, transfer ownership first
     if (this.persisted!.ownerId === participantId) {
       await this.transferOwnership();
     }
 
     // Broadcast departure to remaining participants with authoritative participant list
-    if (this.participants.size > 0) {
+    const remaining = this.getParticipantList();
+    if (remaining.length > 0) {
       this.broadcast({
         type: 'participant_left',
         participantId,
-        nickname: participant.nickname,
-        participants: this.getParticipantList(),
-        systemMessage: `${participant.nickname} left the room`,
+        nickname: leavingNickname,
+        participants: remaining,
+        systemMessage: `${leavingNickname} left the room`,
       });
       this.broadcastTyping();
     }
 
     // If room is empty, set a shorter cleanup alarm
-    if (this.participants.size === 0) {
+    if (remaining.length === 0) {
       await this.ctx.storage.setAlarm(Date.now() + EMPTY_ROOM_TIMEOUT_MS);
     }
   }
@@ -644,7 +699,8 @@ export class ChatRoom extends DurableObject {
   // ── Ownership transfer ─────────────────────────────────────────────────────
 
   private async transferOwnership(): Promise<void> {
-    if (this.participants.size === 0) {
+    const activeList = this.getParticipantList();
+    if (activeList.length === 0) {
       this.persisted!.ownerId = null;
       await this.saveState();
       return;
