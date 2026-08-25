@@ -1,0 +1,24 @@
+{
+  "name": "doomchat",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "npm run build --workspace=frontend",
+    "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings worker/src/worker-env.d.ts"
+  },
+  "devDependencies": {
+    "wrangler": "^4.125.0"
+  },
+  "workspaces": [
+    "frontend",
+    "worker"
+  ],
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "sharp@0.33.5": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260820.1": true
+  }
+}

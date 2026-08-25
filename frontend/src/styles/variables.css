@@ -1,0 +1,83 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   DoomChat Design System — CSS Custom Properties
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Backgrounds */
+  --bg-base: #0a0a0b;
+  --bg-surface: #111114;
+  --bg-elevated: #18181d;
+  --bg-overlay: #1f1f26;
+
+  /* Borders */
+  --border-subtle: #1e1e26;
+  --border-default: #2a2a35;
+  --border-strong: #3a3a4a;
+
+  /* Text */
+  --text-primary: #f0f0f5;
+  --text-secondary: #9898b0;
+  --text-muted: #5c5c72;
+  --text-inverse: #0a0a0b;
+
+  /* Accent — crimson */
+  --accent-primary: #dc2626;
+  --accent-bright: #ef4444;
+  --accent-dim: #991b1b;
+  --accent-glow: rgba(220, 38, 38, 0.15);
+  --accent-glow-strong: rgba(220, 38, 38, 0.3);
+
+  /* Status colors */
+  --color-online: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+
+  /* System message */
+  --color-system: #6b6b85;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-glow-accent: 0 0 20px var(--accent-glow);
+
+  /* Transitions */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 350ms ease;
+
+  /* Message bubbles */
+  --bubble-own: #1e1228;
+  --bubble-own-border: #3d1d50;
+  --bubble-other: #18181d;
+  --bubble-other-border: #2a2a35;
+
+  /* Layout */
+  --header-height: 60px;
+  --sidebar-width: 220px;
+  --composer-height: 80px;
+}

@@ -1,0 +1,137 @@
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  scroll-behavior: smooth;
+}
+
+.message-list-empty {
+  align-items: center;
+  justify-content: center;
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  opacity: 0.5;
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* System messages */
+.system-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  margin: var(--space-1) 0;
+}
+
+.system-message-text {
+  font-size: 0.8125rem;
+  color: var(--color-system);
+  font-style: italic;
+}
+
+.system-message-time {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+/* Message wrapper */
+.message-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: 75%;
+  animation: messageIn 0.2s ease forwards;
+}
+
+.message-wrapper-own {
+  align-self: flex-end;
+  align-items: flex-end;
+  animation: messageInOwn 0.2s ease forwards;
+}
+
+.message-grouped {
+  margin-top: -2px;
+}
+
+/* Metadata (author + time) */
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+.message-meta-own {
+  flex-direction: row-reverse;
+}
+
+.message-author {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.message-time {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+/* Message bubble */
+.message-bubble {
+  background: var(--bubble-other);
+  border: 1px solid var(--bubble-other-border);
+  border-radius: var(--radius-lg);
+  border-top-left-radius: var(--radius-sm);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.message-bubble-own {
+  background: var(--bubble-own);
+  border-color: var(--bubble-own-border);
+  border-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-sm);
+}
+
+@media (max-width: 600px) {
+  .message-wrapper {
+    max-width: 90%;
+  }
+
+  .message-list {
+    padding: var(--space-3) var(--space-4);
+  }
+}
