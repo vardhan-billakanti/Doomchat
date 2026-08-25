@@ -93,6 +93,8 @@ export interface ClientRoomJoin {
   type: 'room_join';
   nickname: string;
   roomCode: string;
+  participantId?: string;
+  token?: string;
 }
 
 export interface ClientMessage {
@@ -137,6 +139,8 @@ export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'dis
 
 export interface CreateRoomResponse {
   roomCode: string;
+  creatorToken?: string;
+  participantId?: string;
 }
 
 export interface RoomStatusResponse {

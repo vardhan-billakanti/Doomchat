@@ -74,6 +74,9 @@ export function useChatRoom({
     };
   }, [roomCode]);
 
+  // Deduplicate messages across reconnects/re-renders
+  const seenMessageIds = useRef<Set<string>>(new Set());
+
   // Use refs to avoid stale closures in event handlers
   const participantIdRef = useRef<string | null>(null);
   const sendRef = useRef<((event: ClientEvent) => void) | null>(null);
@@ -99,6 +102,11 @@ export function useChatRoom({
             roomCode: string;
           };
           participantIdRef.current = e.yourParticipantId;
+          try {
+            sessionStorage.setItem(`doomchat_${roomCode}_pid`, e.yourParticipantId);
+          } catch {
+            // ignore
+          }
           setParticipantId(e.yourParticipantId);
           setParticipants(e.participants);
           setIsOwner(e.isOwner);
@@ -143,6 +151,14 @@ export function useChatRoom({
 
         case 'message': {
           const e = event as { type: 'message'; message: ChatMessage };
+          // Prevent duplicate message processing
+          if (e.message?.id) {
+            if (seenMessageIds.current.has(e.message.id)) {
+              return;
+            }
+            seenMessageIds.current.add(e.message.id);
+          }
+
           // Decrypt client-side if E2EE envelope
           if (roomKeyRef.current) {
             decryptMessage(e.message.text, roomKeyRef.current).then((decryptedText) => {
@@ -217,7 +233,22 @@ export function useChatRoom({
 
   // onConnect sends the room_join event directly using the open socket send function
   const onConnect = useCallback((sendFn: (event: ClientEvent) => void) => {
-    sendFn({ type: 'room_join', nickname, roomCode });
+    let storedPid: string | null = null;
+    let storedToken: string | null = null;
+    try {
+      storedPid = sessionStorage.getItem(`doomchat_${roomCode}_pid`);
+      storedToken = sessionStorage.getItem(`doomchat_${roomCode}_token`);
+    } catch {
+      // ignore
+    }
+
+    sendFn({
+      type: 'room_join',
+      nickname,
+      roomCode,
+      participantId: storedPid || participantIdRef.current || undefined,
+      token: storedToken || undefined,
+    });
   }, [nickname, roomCode]);
 
   const { connectionState, send, disconnect } = useWebSocket({

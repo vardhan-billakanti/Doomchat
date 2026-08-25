@@ -50,6 +50,8 @@ export interface ClientRoomJoin {
   type: 'room_join';
   nickname: string;
   roomCode: string;
+  participantId?: string;
+  token?: string;
 }
 
 export interface ClientMessage {

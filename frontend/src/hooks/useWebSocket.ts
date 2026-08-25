@@ -71,6 +71,25 @@ export function useWebSocket({
   const connect = useCallback((path: string) => {
     if (intentionalCloseRef.current) return;
 
+    // Prevent duplicate connections if current socket is open or in flight
+    if (
+      wsRef.current &&
+      (wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
+    // Clean up any lingering socket
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch {
+        // ignore
+      }
+      wsRef.current = null;
+    }
+
     setConnectionState(retriesRef.current === 0 ? 'connecting' : 'reconnecting');
 
     try {
@@ -118,7 +137,6 @@ export function useWebSocket({
 
         // Don't reconnect on clean server-side close with specific codes
         if (e.code === 1008 || e.code === 410) {
-          // Policy violation or room gone — don't retry
           setConnectionState('disconnected');
           onDisconnectRef.current?.();
           return;
@@ -138,7 +156,7 @@ export function useWebSocket({
       };
 
       ws.onerror = () => {
-        // onerror is always followed by onclose, so handle reconnection there
+        // onerror is followed by onclose
       };
     } catch {
       setConnectionState('disconnected');
@@ -153,8 +171,45 @@ export function useWebSocket({
     retriesRef.current = 0;
     connect(url);
 
+    // Mobile backgrounding & network change lifecycle listeners
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !intentionalCloseRef.current) {
+        const state = wsRef.current?.readyState;
+        if (state === WebSocket.OPEN) {
+          wsRef.current?.send(JSON.stringify({ type: 'ping' }));
+        } else if (state !== WebSocket.CONNECTING) {
+          clearReconnectTimer();
+          retriesRef.current = 0;
+          connect(url);
+        }
+      }
+    };
+
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if ((e.persisted || !wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) && !intentionalCloseRef.current) {
+        clearReconnectTimer();
+        retriesRef.current = 0;
+        connect(url);
+      }
+    };
+
+    const handleOnline = () => {
+      if (!intentionalCloseRef.current) {
+        clearReconnectTimer();
+        retriesRef.current = 0;
+        connect(url);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('online', handleOnline);
+
     return () => {
       intentionalCloseRef.current = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('online', handleOnline);
       clearReconnectTimer();
       clearPingInterval();
       if (wsRef.current) {

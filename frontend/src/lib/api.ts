@@ -10,13 +10,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RAW_API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+const PRODUCTION_WORKER_FALLBACK = 'https://doomchat.doomchat.workers.dev';
+
+function resolveBaseUrl(): string {
+  if (RAW_API_URL) return RAW_API_URL;
+  if (
+    typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1' &&
+    !window.location.hostname.endsWith('.local')
+  ) {
+    return PRODUCTION_WORKER_FALLBACK;
+  }
+  return '';
+}
 
 /**
  * Normalized HTTP base origin (e.g. "https://doomchat.doomchat.workers.dev")
  */
 function getHttpOrigin(): string {
-  if (!RAW_API_URL) return '';
-  let url = RAW_API_URL.replace(/\/+$/, '');
+  const base = resolveBaseUrl();
+  if (!base) return '';
+  let url = base.replace(/\/+$/, '');
   if (url.startsWith('ws://')) {
     url = url.replace(/^ws:\/\//, 'http://');
   } else if (url.startsWith('wss://')) {
@@ -31,11 +46,12 @@ function getHttpOrigin(): string {
  * Normalized WebSocket base origin (e.g. "wss://doomchat.doomchat.workers.dev")
  */
 function getWsOrigin(): string {
-  if (!RAW_API_URL) {
+  const base = resolveBaseUrl();
+  if (!base) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}`;
   }
-  let url = RAW_API_URL.replace(/\/+$/, '');
+  let url = base.replace(/\/+$/, '');
   if (url.startsWith('https://')) {
     url = url.replace(/^https:\/\//, 'wss://');
   } else if (url.startsWith('http://')) {

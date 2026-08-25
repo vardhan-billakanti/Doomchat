@@ -43,7 +43,13 @@ export default function CreateRoom({ onRoomCreated, onBack }: CreateRoomProps) {
         throw new Error(body.error ?? 'Failed to create room.');
       }
 
-      const data = await res.json() as CreateRoomResponse;
+      const data = (await res.json()) as CreateRoomResponse;
+      if (data.participantId) {
+        sessionStorage.setItem(`doomchat_${data.roomCode}_pid`, data.participantId);
+      }
+      if (data.creatorToken) {
+        sessionStorage.setItem(`doomchat_${data.roomCode}_token`, data.creatorToken);
+      }
       onRoomCreated(data.roomCode, trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create room. Please try again.');

@@ -1,5 +1,10 @@
 import { ChatRoom } from './ChatRoom';
-import { generateRoomCode, validateRoomCode, validateNickname } from './validation';
+import {
+  generateRoomCode,
+  validateRoomCode,
+  validateNickname,
+  generateParticipantId,
+} from './validation';
 
 // Re-export the Durable Object class so Wrangler can find it
 export { ChatRoom };
@@ -94,17 +99,28 @@ export default {
         return errorResponse('Could not generate a unique room code. Please try again.', 503);
       }
 
+      const creatorId = generateParticipantId();
+      const creatorToken = generateParticipantId();
+
       // Initialize the room
       const stub = getRoomStub(env, roomCode);
       await stub.fetch(
         new Request(`${url.origin}/init`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ creatorNickname: body.nickname }),
+          body: JSON.stringify({
+            creatorId,
+            creatorToken,
+            creatorNickname: body.nickname,
+          }),
         })
       );
 
-      return jsonResponse({ roomCode });
+      return jsonResponse({
+        roomCode,
+        creatorToken,
+        participantId: creatorId,
+      });
     }
 
     // GET /api/rooms/:code — Check room status
