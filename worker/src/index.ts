@@ -96,7 +96,13 @@ export default {
 
       // Initialize the room
       const stub = getRoomStub(env, roomCode);
-      await stub.fetch(new Request(`${url.origin}/init`, { method: 'POST' }));
+      await stub.fetch(
+        new Request(`${url.origin}/init`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creatorNickname: body.nickname }),
+        })
+      );
 
       return jsonResponse({ roomCode });
     }

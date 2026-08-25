@@ -4,6 +4,8 @@ import type {
   Participant,
   ServerEvent,
   ServerRoomState,
+  ChatMessage,
+  Env,
 } from './types';
 import { ErrorCodes } from './types';
 import {
@@ -21,9 +23,10 @@ import { RateLimiter } from './rateLimit';
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface PersistedState {
-  ownerId: string | null;
-  disbanded: boolean;
   createdAt: number;
+  ownerId: string | null;
+  creatorNickname: string | null;
+  disbanded: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,26 +62,74 @@ export class ChatRoom extends DurableObject {
   // initialization flag
   private initialized = false;
 
-  constructor(ctx: DurableObjectState, env: unknown) {
+  constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
   }
 
   // ── Initialization ─────────────────────────────────────────────────────────
 
   private async ensureInitialized(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {
+      this.syncParticipantsFromSockets();
+      return;
+    }
     const stored = await this.ctx.storage.get<PersistedState>('state');
     this.persisted = stored ?? {
       ownerId: null,
+      creatorNickname: null,
       disbanded: false,
       createdAt: 0,
     };
     this.initialized = true;
+    this.syncParticipantsFromSockets();
   }
 
   private async saveState(): Promise<void> {
     if (this.persisted) {
       await this.ctx.storage.put('state', this.persisted);
+    }
+  }
+
+  /**
+   * Synchronizes the in-memory participant map with all currently live WebSockets
+   * via Cloudflare WebSocket Hibernation attachments.
+   */
+  private syncParticipantsFromSockets(): void {
+    const activeSockets = this.ctx.getWebSockets();
+    const activeIds = new Set<string>();
+
+    for (const ws of activeSockets) {
+      const att = ws.deserializeAttachment() as {
+        id: string;
+        nickname: string;
+        joinedAt: number;
+      } | null;
+
+      if (att && att.id && att.nickname) {
+        activeIds.add(att.id);
+        const existing = this.participants.get(att.id);
+        if (!existing) {
+          this.participants.set(att.id, {
+            id: att.id,
+            nickname: att.nickname,
+            joinedAt: att.joinedAt || Date.now(),
+            rateLimiter: new RateLimiter(),
+            isTyping: false,
+            typingTimeout: null,
+          });
+        }
+      }
+    }
+
+    // Clean up any in-memory participant whose WebSocket is no longer open
+    for (const id of Array.from(this.participants.keys())) {
+      if (!activeIds.has(id)) {
+        const p = this.participants.get(id);
+        if (p?.typingTimeout) {
+          clearTimeout(p.typingTimeout);
+        }
+        this.participants.delete(id);
+      }
     }
   }
 
@@ -110,6 +161,14 @@ export class ChatRoom extends DurableObject {
       if (this.persisted!.createdAt > 0) {
         // Room already exists
         return Response.json({ ok: true });
+      }
+      try {
+        const initBody = (await request.json()) as { creatorNickname?: string };
+        if (initBody?.creatorNickname) {
+          this.persisted!.creatorNickname = sanitizeText(initBody.creatorNickname.trim());
+        }
+      } catch {
+        // ignore parse error if no body
       }
       this.persisted!.createdAt = Date.now();
       await this.saveState();
@@ -291,14 +350,26 @@ export class ChatRoom extends DurableObject {
     const sanitizedNickname = sanitizeText((nickname as string).trim());
     const now = Date.now();
 
-    // If this is the first participant, they become the owner
+    // If ownerId is not set, set it if this is the creator (or first participant)
+    const isCreator = this.persisted!.creatorNickname && sanitizedNickname === this.persisted!.creatorNickname;
     const isFirstParticipant = this.persisted!.ownerId === null;
-    if (isFirstParticipant) {
+    if (isCreator || (isFirstParticipant && !this.persisted!.creatorNickname)) {
       this.persisted!.ownerId = participantId;
       await this.saveState();
     }
 
     const isOwner = this.persisted!.ownerId === participantId;
+
+    // Attach participant metadata to the WebSocket so it survives DO hibernation
+    try {
+      ws.serializeAttachment({
+        id: participantId,
+        nickname: sanitizedNickname,
+        joinedAt: now,
+      });
+    } catch {
+      // ignore if environment does not support serialization
+    }
 
     // Add to in-memory map
     this.participants.set(participantId, {
@@ -444,6 +515,16 @@ export class ChatRoom extends DurableObject {
     const participant = this.participants.get(participantId);
     if (!participant) return;
 
+    // Clear attachment on the leaving socket
+    const sockets = this.ctx.getWebSockets(participantId);
+    for (const s of sockets) {
+      try {
+        s.serializeAttachment(null);
+      } catch {
+        // ignore
+      }
+    }
+
     // Clear typing status
     if (participant.typingTimeout) {
       clearTimeout(participant.typingTimeout);
@@ -544,6 +625,7 @@ export class ChatRoom extends DurableObject {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private getParticipantList(): Participant[] {
+    this.syncParticipantsFromSockets();
     return Array.from(this.participants.values())
       .sort((a, b) => a.joinedAt - b.joinedAt)
       .map((p) => ({

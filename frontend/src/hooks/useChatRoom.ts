@@ -251,12 +251,13 @@ export function useChatRoom({
         console.warn('[E2EE] Encryption error:', err);
       }
 
-      send({ type: 'message', text: payloadText });
+      const sendFn = sendRef.current ?? send;
+      sendFn({ type: 'message', text: payloadText });
 
       // Stop typing indicator when sending
       if (isTypingRef.current) {
         isTypingRef.current = false;
-        send({ type: 'typing_stop' });
+        sendFn({ type: 'typing_stop' });
       }
       if (typingDebounceRef.current) {
         clearTimeout(typingDebounceRef.current);

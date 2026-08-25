@@ -3,6 +3,10 @@
 // All events are JSON-serialized over the WebSocket connection
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface Env {
+  CHAT_ROOM: DurableObjectNamespace;
+}
+
 // ── Participant ──────────────────────────────────────────────────────────────
 
 export interface Participant {

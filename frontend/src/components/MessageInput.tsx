@@ -98,6 +98,15 @@ export default function MessageInput({
           id="send-message-btn"
           className={`send-btn${!text.trim() || disabled ? ' send-btn-disabled' : ''}`}
           onClick={handleSend}
+          onMouseDown={(e) => {
+            // Prevent textarea from losing focus on desktop mouse click
+            e.preventDefault();
+          }}
+          onPointerDown={(e) => {
+            // Prevent textarea blur and virtual keyboard dismissal on mobile touch devices
+            e.preventDefault();
+            handleSend();
+          }}
           disabled={!text.trim() || disabled}
           aria-label="Send message"
           type="button"
