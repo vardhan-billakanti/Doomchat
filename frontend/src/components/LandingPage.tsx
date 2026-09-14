@@ -142,7 +142,6 @@ export default function LandingPage({ onCreate, onJoin }: LandingPageProps) {
       </div>
 
       <footer className="landing-footer">
-        <p className="landing-footer-note">DoomChat — zero-storage encrypted rooms</p>
         <div className="creator-credit">
           <p className="credit-text">
             Designed &amp; Developed by{' '}
