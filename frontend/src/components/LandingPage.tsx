@@ -142,7 +142,21 @@ export default function LandingPage({ onCreate, onJoin }: LandingPageProps) {
       </div>
 
       <footer className="landing-footer">
-        <span>DoomChat — zero-storage encrypted rooms</span>
+        <p className="landing-footer-note">DoomChat — zero-storage encrypted rooms</p>
+        <div className="creator-credit">
+          <p className="credit-text">
+            Designed &amp; Developed by{' '}
+            <a
+              href="https://vardhanbillakanti.in/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="credit-author-link"
+            >
+              Billakanti Jaya Vardhan
+            </a>
+          </p>
+          <p className="credit-copyright">© 2026 · All Rights Reserved</p>
+        </div>
       </footer>
     </main>
   );
