@@ -227,3 +227,8 @@ doomchat/
 - **Cloudflare free tier**: Durable Objects are NOT available on the free tier.
 - **Room codes are not passwords**: They are short and shareable by design. Don't use DoomChat for sensitive information.
 - **WebSocket reconnection**: The client retries up to 5 times with exponential backoff. After that, it shows as disconnected.
+
+## Author
+
+**Billakanti Jaya Vardhan**
+- GitHub: [@vardhan-billakanti](https://github.com/vardhan-billakanti)
